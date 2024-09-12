@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"image/color"
 	"log"
+	"fmt"
 	"slices"
 	"strconv"
 
@@ -54,6 +55,15 @@ type Board struct {
 	W, H int
 	b    []int
 	m    []bool
+}
+
+func buildBoard(w int, b []int) Board {
+	return Board{
+		W: w,
+		H: len(b) / w,
+		b: b,
+		m: make([]bool, len(b)),
+	}
 }
 
 func (b *Board) At(x int, y int) (int, bool) {
@@ -125,6 +135,8 @@ func (b *Board) ClickPos(x, y int) (bool, int, int) {
 }
 
 type Game struct {
+	level int
+	levels []Board
 	hist []Board
 	mx, my float32 // mouse position
 }
@@ -154,7 +166,7 @@ func (g *Game) doSel(cx, cy float32) {
 		}
 	}
 
-	if total == 0 || total % 10 != 0 {
+	if total != 10 {
 		return
 	}
 
@@ -183,7 +195,17 @@ func (g *Game) Update() error {
 	if inpututil.IsKeyJustPressed(ebiten.KeyArrowLeft) && len(g.hist) > 1 {
 		g.hist = g.hist[:len(g.hist)-1]
 	}
-		
+	
+	if inpututil.IsKeyJustPressed(ebiten.KeyN) {
+		g.level = (g.level + 1) % len(g.levels)
+		g.hist = []Board{g.levels[g.level]}
+	}
+
+	if inpututil.IsKeyJustPressed(ebiten.KeyP) {
+		g.level = (g.level - 1 + len(g.levels)) % len(g.levels)
+		g.hist = []Board{g.levels[g.level]}
+	}
+
 	return nil
 }
 
@@ -195,7 +217,11 @@ func (g *Game) Draw(screen *ebiten.Image) {
 		bx, by := float32(cx), float32(cy)
 		drawRect(screen, g.mx, g.my, bx, by, 1, colorWhite)		
 	}
-	ebitenutil.DebugPrint(screen, "Press  ARROW LEFT to UNDO")
+	ebitenutil.DebugPrint(screen, fmt.Sprintf(`Level %d of %d
+Controls:
+N - next level
+P - previous level
+ARROW LEFT - UNDO`, g.level + 1, len(g.levels)))
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
@@ -206,14 +232,44 @@ func main() {
 	ebiten.SetWindowSize(screenWidth, screenHeight)
 	ebiten.SetWindowTitle("Hello there")
 
-	board := Board{
-		W: 5, 
-		H: 5, 
-		b: []int{5,5,3,1,3,5,2,3,4,6,1,6,1,1,1,1,2,7,5,6,3,3,7,5,4},
-		m: make([]bool, 5*5),
+
+	levels := []Board{
+		buildBoard(5, []int{6,3,2,2,3,4,3,2,4,1,1,7,1,3,6,1,6,4,7,2,3,1,3,3,2}),
+		buildBoard(5, []int{5,1,1,1,6,5,7,1,1,2,5,4,7,1,2,5,6,4,2,5,8,2,2,2,5}),
+		buildBoard(5, []int{8,2,2,1,9,3,1,2,5,5,3,4,5,4,4,4,5,1,1,1,7,3,2,1,7}),
+		buildBoard(5, []int{2,5,7,3,7,8,5,3,9,1,2,6,4,7,3,8,3,7,4,6,5,5,1,2,7}),
+		buildBoard(5, []int{5,7,2,2,6,5,3,2,7,1,1,1,1,1,9,7,6,1,2,7,6,4,4,2,8}),
+		buildBoard(5, []int{1,7,1,1,2,4,4,5,1,8,6,2,2,2,4,2,5,1,2,2,9,1,4,6,8}),
+		buildBoard(5, []int{2,6,2,1,9,2,4,2,2,2,2,1,4,3,8,3,1,3,5,1,7,2,8,8,2}),
+		buildBoard(5, []int{5,3,5,1,7,5,1,1,1,1,3,3,1,2,7,1,3,2,5,2,3,2,2,3,1}),
+		buildBoard(5, []int{2,8,9,1,4,7,1,1,1,1,3,7,3,7,1,1,3,1,5,4,6,4,4,2,4}),
+		buildBoard(5, []int{6,3,7,3,5,4,4,5,5,2,3,3,2,1,2,3,7,5,2,8,4,4,2,3,7}),
+		buildBoard(5, []int{1,4,1,4,6,2,2,4,2,4,5,5,2,4,6,8,2,2,7,1,5,5,6,1,1}),
+		buildBoard(5, []int{3,3,1,3,1,3,8,2,3,3,1,7,2,5,5,5,2,8,2,2,5,4,6,2,4}),
+		buildBoard(5, []int{1,1,8,6,4,2,3,2,3,1,1,7,3,7,1,8,1,7,9,2,1,2,3,1,6}),
+		buildBoard(5, []int{4,4,4,3,3,2,4,2,1,3,4,2,2,6,1,5,9,1,1,3,5,1,2,6,2}),
+		buildBoard(5, []int{8,2,5,4,1,6,1,4,2,2,4,3,2,7,3,7,5,4,2,8,3,1,6,8,2}),
+		buildBoard(5, []int{4,6,3,3,4,5,5,4,1,4,3,3,1,1,9,4,7,5,5,4,3,6,3,1,6}),
+		buildBoard(5, []int{9,8,2,4,6,1,1,9,9,1,6,1,1,2,5,8,2,4,6,1,1,6,2,1,4}),
+		buildBoard(5, []int{6,5,2,5,1,4,5,2,1,9,8,4,1,9,1,2,1,4,9,1,5,5,1,2,7}),
+		buildBoard(5, []int{1,1,5,2,6,1,9,5,1,3,9,4,1,1,5,1,1,4,2,4,5,4,1,2,2}),
+		buildBoard(5, []int{1,9,8,2,2,2,4,2,2,8,1,5,2,2,2,6,2,5,3,6,4,4,2,4,2}),
+		buildBoard(5, []int{4,3,3,9,1,5,7,4,3,3,5,3,8,1,1,3,3,2,2,5,4,6,1,9,5}),
+		buildBoard(5, []int{1,4,5,9,4,1,3,5,1,6,1,5,5,6,4,1,2,5,2,2,8,2,6,4,8}),
+		buildBoard(5, []int{2,9,3,2,6,8,1,2,3,4,1,1,1,7,1,3,1,7,3,1,7,9,2,8,8}),
+		buildBoard(5, []int{2,2,4,2,2,3,2,2,3,7,3,8,2,1,2,1,3,3,5,3,3,8,2,4,3}),
+		buildBoard(5, []int{3,1,6,3,5,6,3,1,1,1,4,1,3,2,4,8,1,5,1,3,2,3,1,9,3}),
+		buildBoard(5, []int{3,2,5,7,3,1,8,5,7,3,3,4,4,2,6,3,8,2,9,2,4,4,2,1,2}),
+		buildBoard(5, []int{6,4,3,1,2,4,4,4,5,5,4,1,1,1,3,6,8,2,1,5,5,5,5,2,3}),
+		buildBoard(5, []int{2,8,5,5,6,9,4,3,3,4,1,9,1,8,2,5,2,5,5,2,5,8,7,3,8}),
+		buildBoard(5, []int{4,2,4,1,3,1,2,5,1,5,1,6,2,7,2,3,3,3,1,1,3,1,8,2,9}),
+		buildBoard(5, []int{2,8,1,3,1,4,1,5,5,5,1,4,2,2,6,8,4,6,5,2,2,5,5,5,8}),
 	}
+	
 	g := Game{
-		hist: []Board{board},
+		levels: levels,
+		level: 0,
+		hist: []Board{levels[0]},
 	}
 
 	if err := ebiten.RunGame(&g); err != nil {
