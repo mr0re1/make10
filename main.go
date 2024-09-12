@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"image/color"
 	"log"
 	"slices"
@@ -20,6 +19,7 @@ var (
 	mplusFaceSource *text.GoTextFaceSource
 	debugColor	  color.Color
 	colorWhite	  color.Color
+	dColors = map[int]color.Color{}
 )
 
 func init() {
@@ -30,6 +30,17 @@ func init() {
 	mplusFaceSource = s
 	debugColor = color.RGBA{0xff, 0x80, 0x0D, 0}
 	colorWhite = color.RGBA{0xfa, 0xfa, 0xfa, 0xff}
+	dColors = map[int]color.Color{
+		1: color.RGBA{0x2e, 0x8b, 0x57, 0xff},
+		2: color.RGBA{0xff, 0xe4, 0xc4, 0xff},
+		3: color.RGBA{0xff, 0x00, 0x00, 0xff},
+		4: color.RGBA{0xff, 0xff, 0x00, 0xff},
+		5: color.RGBA{0x00, 0xff, 0x00, 0xff},
+		6: color.RGBA{0xe9, 0x96, 0x7a, 0xff},
+		7: color.RGBA{0x00, 0xbf, 0xff, 0xff},
+		8: color.RGBA{0xff, 0x80, 0x0d, 0xff},
+		9: color.RGBA{0xff, 0x14, 0x93, 0xff},
+	}
 }
 
 const (
@@ -37,7 +48,6 @@ const (
 	screenHeight = 480
 	tileSize = 40
 	debug = false
-	
 )
 
 type Board struct {
@@ -80,18 +90,15 @@ func (b *Board) Draw(screen *ebiten.Image) {
 			
 			n, m := b.At(x, y)
 			cx, cy := float32(ulx+x*tileSize), float32(uly+y*tileSize)
-
-			clr := colorWhite
-			if m {
-				clr = 	color.RGBA{0x2a, 0x2a, 0x2a, 0xff}
-			}
 			
 			op := &text.DrawOptions{}
 			op.GeoM.Translate(
 				float64(cx + 0.2 * tileSize), 
 				float64(cy - 0.23 * tileSize))
-			op.ColorScale.ScaleWithColor(clr)
-
+			op.ColorScale.ScaleWithColor(dColors[n])
+			if m {
+				op.ColorScale.ScaleAlpha(0.2)
+			}
 			
 			text.Draw(screen, strconv.Itoa(n), &text.GoTextFace{
 				Source: mplusFaceSource,
@@ -202,7 +209,7 @@ func main() {
 	board := Board{
 		W: 5, 
 		H: 5, 
-		b: []int{4, 6, 7, 8, 1, 3, 8, 4, 1, 9, 5, 7, 2, 1, 8, 3, 5, 5, 9, 2, 9, 5, 8, 2, 8},
+		b: []int{5,5,3,1,3,5,2,3,4,6,1,6,1,1,1,1,2,7,5,6,3,3,7,5,4},
 		m: make([]bool, 5*5),
 	}
 	g := Game{
