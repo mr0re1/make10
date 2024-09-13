@@ -2,25 +2,26 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"image/color"
 	"log"
-	"fmt"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
-	"github.com/hajimehoshi/ebiten/v2/inpututil"
-	"github.com/hajimehoshi/ebiten/v2/vector"
 	"github.com/hajimehoshi/ebiten/v2/examples/resources/fonts"
+	"github.com/hajimehoshi/ebiten/v2/inpututil"
 	"github.com/hajimehoshi/ebiten/v2/text/v2"
+	"github.com/hajimehoshi/ebiten/v2/vector"
 )
 
 var (
 	mplusFaceSource *text.GoTextFaceSource
-	debugColor	  color.Color
-	colorWhite	  color.Color
-	dColors = map[int]color.Color{}
+	debugColor      color.Color
+	colorWhite      color.Color
+	dColors         = map[int]color.Color{}
 )
 
 func init() {
@@ -47,8 +48,8 @@ func init() {
 const (
 	screenWidth  = 640
 	screenHeight = 480
-	tileSize = 40
-	debug = false
+	tileSize     = 40
+	debug        = false
 )
 
 type Board struct {
@@ -79,15 +80,15 @@ func drawRect(screen *ebiten.Image, ax float32, ay float32, bx float32, by float
 	vector.StrokeLine(screen, ax, ay, ax, by, thickness, clr, antialias)
 	vector.StrokeLine(screen, ax, by, bx, by, thickness, clr, antialias)
 	vector.StrokeLine(screen, bx, by, bx, ay, thickness, clr, antialias)
-	vector.StrokeLine(screen, bx, ay, ax, ay, thickness, clr, antialias)		
+	vector.StrokeLine(screen, bx, ay, ax, ay, thickness, clr, antialias)
 }
 
 func (b *Board) centerPos(x, y int) (float32, float32) {
 	ulx := (screenWidth - b.W*tileSize) / 2
 	uly := (screenHeight - b.H*tileSize) / 2
 
-	cx := float32(ulx+x*tileSize) + 0.5 * tileSize
-	cy := float32(uly+y*tileSize) + 0.5 * tileSize
+	cx := float32(ulx+x*tileSize) + 0.5*tileSize
+	cy := float32(uly+y*tileSize) + 0.5*tileSize
 	return cx, cy
 }
 
@@ -97,19 +98,19 @@ func (b *Board) Draw(screen *ebiten.Image) {
 
 	for x := 0; x < b.W; x++ {
 		for y := 0; y < b.H; y++ {
-			
+
 			n, m := b.At(x, y)
 			cx, cy := float32(ulx+x*tileSize), float32(uly+y*tileSize)
-			
+
 			op := &text.DrawOptions{}
 			op.GeoM.Translate(
-				float64(cx + 0.2 * tileSize), 
-				float64(cy - 0.23 * tileSize))
+				float64(cx+0.2*tileSize),
+				float64(cy-0.23*tileSize))
 			op.ColorScale.ScaleWithColor(dColors[n])
 			if m {
 				op.ColorScale.ScaleAlpha(0.2)
 			}
-			
+
 			text.Draw(screen, strconv.Itoa(n), &text.GoTextFace{
 				Source: mplusFaceSource,
 				Size:   tileSize,
@@ -135,18 +136,137 @@ func (b *Board) ClickPos(x, y int) (bool, int, int) {
 }
 
 type Game struct {
-	level int
+	level  int
 	levels []Board
-	hist []Board
-	mx, my float32 // mouse position
+	hist   []Board
+
+	mouse PosControl
+	_log  []string
 }
 
 func (g *Game) b() *Board {
 	return &g.hist[len(g.hist)-1]
 }
 
-func (g *Game) doSel(cx, cy float32) {
-	lx, rx, ly, ry := min(g.mx, cx), max(g.mx, cx), min(g.my, cy), max(g.my, cy)
+func (g *Game) log(msg string) {
+	g._log = append([]string{msg}, g._log...)
+	if len(g._log) > 30 {
+		g._log = g._log[:30]
+	}
+}
+
+type Pos struct {
+	X, Y float32
+}
+
+func (p Pos) String() string {
+	return fmt.Sprintf("(%d, %d)", int(p.X), int(p.Y))
+}
+
+type PosControl interface {
+	IsDragging() (bool, Pos, Pos)
+	JustFinishedDragging() (bool, Pos, Pos)
+	Update() error
+}
+
+type MouseControl struct {
+	sp                   Pos
+	dragging             bool
+	justFinishedDragging bool
+}
+
+func (m *MouseControl) cursorPos() Pos {
+	x, y := ebiten.CursorPosition()
+	return Pos{float32(x), float32(y)}
+}
+
+func (m *MouseControl) Update() error {
+	m.justFinishedDragging = false
+
+	if inpututil.IsMouseButtonJustReleased(ebiten.MouseButtonLeft) {
+		m.dragging, m.justFinishedDragging = false, true
+	}
+
+	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
+		m.dragging, m.sp = true, m.cursorPos()
+	}
+	return nil
+}
+
+func (m *MouseControl) IsDragging() (bool, Pos, Pos) {
+	return m.dragging, m.sp, m.cursorPos()
+}
+
+func (m *MouseControl) JustFinishedDragging() (bool, Pos, Pos) {
+	return m.justFinishedDragging, m.sp, m.cursorPos()
+}
+
+type TouchControl struct {
+	drugging             bool
+	id                   ebiten.TouchID
+	sp, fp               Pos
+	justFinishedDragging bool
+}
+
+func (t *TouchControl) IsDragging() (bool, Pos, Pos) {
+	return t.drugging, t.sp, t.fp
+}
+
+func (t *TouchControl) JustFinishedDragging() (bool, Pos, Pos) {
+	return t.justFinishedDragging, t.sp, t.fp
+}
+
+func (t *TouchControl) touchPos() Pos {
+	x, y := ebiten.TouchPosition(t.id)
+	return Pos{float32(x), float32(y)}
+}
+
+func (t *TouchControl) Update() error {
+	t.justFinishedDragging = false
+	if !t.drugging {
+		touches := inpututil.AppendJustPressedTouchIDs(nil)
+		if len(touches) == 0 {
+			return nil
+		}
+		t.drugging, t.id, t.sp, t.fp = true, touches[0], t.touchPos(), t.touchPos()
+	}
+
+	if inpututil.IsTouchJustReleased(t.id) {
+		t.drugging, t.justFinishedDragging = false, true
+	} else {
+		t.fp = t.touchPos()
+	}
+	return nil
+}
+
+type CombinedPosControl struct {
+	m MouseControl
+	t TouchControl
+}
+
+func (c *CombinedPosControl) IsDragging() (bool, Pos, Pos) {
+	if ok, s, f := c.m.IsDragging(); ok {
+		return true, s, f
+	}
+	return c.t.IsDragging()
+}
+
+func (c *CombinedPosControl) JustFinishedDragging() (bool, Pos, Pos) {
+	if ok, s, f := c.m.JustFinishedDragging(); ok {
+		return true, s, f
+	}
+	return c.t.JustFinishedDragging()
+}
+
+func (c *CombinedPosControl) Update() error {
+	c.m.Update()
+	c.t.Update()
+	return nil
+}
+
+func (g *Game) doSel(s Pos, f Pos) {
+	g.log(fmt.Sprintf("doSel %v %v", s, f))
+	lx, rx, ly, ry := min(s.X, f.X), max(s.X, f.X), min(s.Y, f.Y), max(s.Y, f.Y)
 
 	b := g.b()
 	total := 0
@@ -181,21 +301,15 @@ func (g *Game) doSel(cx, cy float32) {
 }
 
 func (g *Game) Update() error {
-	if inpututil.IsMouseButtonJustReleased(ebiten.MouseButtonLeft) {
-		icx, icy := ebiten.CursorPosition()
-		cx, cy := float32(icx), float32(icy)
-		g.doSel(cx, cy)
-	}
-
-	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-		cx, cy := ebiten.CursorPosition()
-		g.mx, g.my = float32(cx), float32(cy)	
+	g.mouse.Update()
+	if ok, s, f := g.mouse.JustFinishedDragging(); ok {
+		g.doSel(s, f)
 	}
 
 	if inpututil.IsKeyJustPressed(ebiten.KeyArrowLeft) && len(g.hist) > 1 {
 		g.hist = g.hist[:len(g.hist)-1]
 	}
-	
+
 	if inpututil.IsKeyJustPressed(ebiten.KeyN) {
 		g.level = (g.level + 1) % len(g.levels)
 		g.hist = []Board{g.levels[g.level]}
@@ -212,16 +326,18 @@ func (g *Game) Update() error {
 func (g *Game) Draw(screen *ebiten.Image) {
 	g.b().Draw(screen)
 
-	if ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft) {
-		cx, cy := ebiten.CursorPosition()
-		bx, by := float32(cx), float32(cy)
-		drawRect(screen, g.mx, g.my, bx, by, 1, colorWhite)		
+	if ok, s, f := g.mouse.IsDragging(); ok {
+		drawRect(screen, s.X, s.Y, f.X, f.Y, 1, colorWhite)
 	}
 	ebitenutil.DebugPrint(screen, fmt.Sprintf(`Level %d of %d
 Controls:
 N - next level
 P - previous level
-ARROW LEFT - UNDO`, g.level + 1, len(g.levels)))
+ARROW LEFT - UNDO`, g.level+1, len(g.levels)))
+
+	if debug {
+		ebitenutil.DebugPrintAt(screen, strings.Join(g._log, "\n"), 20, 220)
+	}
 }
 
 func (g *Game) Layout(outsideWidth, outsideHeight int) (int, int) {
@@ -232,44 +348,44 @@ func main() {
 	ebiten.SetWindowSize(screenWidth, screenHeight)
 	ebiten.SetWindowTitle("Hello there")
 
-
 	levels := []Board{
-		buildBoard(5, []int{6,3,2,2,3,4,3,2,4,1,1,7,1,3,6,1,6,4,7,2,3,1,3,3,2}),
-		buildBoard(5, []int{5,1,1,1,6,5,7,1,1,2,5,4,7,1,2,5,6,4,2,5,8,2,2,2,5}),
-		buildBoard(5, []int{8,2,2,1,9,3,1,2,5,5,3,4,5,4,4,4,5,1,1,1,7,3,2,1,7}),
-		buildBoard(5, []int{2,5,7,3,7,8,5,3,9,1,2,6,4,7,3,8,3,7,4,6,5,5,1,2,7}),
-		buildBoard(5, []int{5,7,2,2,6,5,3,2,7,1,1,1,1,1,9,7,6,1,2,7,6,4,4,2,8}),
-		buildBoard(5, []int{1,7,1,1,2,4,4,5,1,8,6,2,2,2,4,2,5,1,2,2,9,1,4,6,8}),
-		buildBoard(5, []int{2,6,2,1,9,2,4,2,2,2,2,1,4,3,8,3,1,3,5,1,7,2,8,8,2}),
-		buildBoard(5, []int{5,3,5,1,7,5,1,1,1,1,3,3,1,2,7,1,3,2,5,2,3,2,2,3,1}),
-		buildBoard(5, []int{2,8,9,1,4,7,1,1,1,1,3,7,3,7,1,1,3,1,5,4,6,4,4,2,4}),
-		buildBoard(5, []int{6,3,7,3,5,4,4,5,5,2,3,3,2,1,2,3,7,5,2,8,4,4,2,3,7}),
-		buildBoard(5, []int{1,4,1,4,6,2,2,4,2,4,5,5,2,4,6,8,2,2,7,1,5,5,6,1,1}),
-		buildBoard(5, []int{3,3,1,3,1,3,8,2,3,3,1,7,2,5,5,5,2,8,2,2,5,4,6,2,4}),
-		buildBoard(5, []int{1,1,8,6,4,2,3,2,3,1,1,7,3,7,1,8,1,7,9,2,1,2,3,1,6}),
-		buildBoard(5, []int{4,4,4,3,3,2,4,2,1,3,4,2,2,6,1,5,9,1,1,3,5,1,2,6,2}),
-		buildBoard(5, []int{8,2,5,4,1,6,1,4,2,2,4,3,2,7,3,7,5,4,2,8,3,1,6,8,2}),
-		buildBoard(5, []int{4,6,3,3,4,5,5,4,1,4,3,3,1,1,9,4,7,5,5,4,3,6,3,1,6}),
-		buildBoard(5, []int{9,8,2,4,6,1,1,9,9,1,6,1,1,2,5,8,2,4,6,1,1,6,2,1,4}),
-		buildBoard(5, []int{6,5,2,5,1,4,5,2,1,9,8,4,1,9,1,2,1,4,9,1,5,5,1,2,7}),
-		buildBoard(5, []int{1,1,5,2,6,1,9,5,1,3,9,4,1,1,5,1,1,4,2,4,5,4,1,2,2}),
-		buildBoard(5, []int{1,9,8,2,2,2,4,2,2,8,1,5,2,2,2,6,2,5,3,6,4,4,2,4,2}),
-		buildBoard(5, []int{4,3,3,9,1,5,7,4,3,3,5,3,8,1,1,3,3,2,2,5,4,6,1,9,5}),
-		buildBoard(5, []int{1,4,5,9,4,1,3,5,1,6,1,5,5,6,4,1,2,5,2,2,8,2,6,4,8}),
-		buildBoard(5, []int{2,9,3,2,6,8,1,2,3,4,1,1,1,7,1,3,1,7,3,1,7,9,2,8,8}),
-		buildBoard(5, []int{2,2,4,2,2,3,2,2,3,7,3,8,2,1,2,1,3,3,5,3,3,8,2,4,3}),
-		buildBoard(5, []int{3,1,6,3,5,6,3,1,1,1,4,1,3,2,4,8,1,5,1,3,2,3,1,9,3}),
-		buildBoard(5, []int{3,2,5,7,3,1,8,5,7,3,3,4,4,2,6,3,8,2,9,2,4,4,2,1,2}),
-		buildBoard(5, []int{6,4,3,1,2,4,4,4,5,5,4,1,1,1,3,6,8,2,1,5,5,5,5,2,3}),
-		buildBoard(5, []int{2,8,5,5,6,9,4,3,3,4,1,9,1,8,2,5,2,5,5,2,5,8,7,3,8}),
-		buildBoard(5, []int{4,2,4,1,3,1,2,5,1,5,1,6,2,7,2,3,3,3,1,1,3,1,8,2,9}),
-		buildBoard(5, []int{2,8,1,3,1,4,1,5,5,5,1,4,2,2,6,8,4,6,5,2,2,5,5,5,8}),
+		buildBoard(5, []int{6, 3, 2, 2, 3, 4, 3, 2, 4, 1, 1, 7, 1, 3, 6, 1, 6, 4, 7, 2, 3, 1, 3, 3, 2}),
+		buildBoard(5, []int{5, 1, 1, 1, 6, 5, 7, 1, 1, 2, 5, 4, 7, 1, 2, 5, 6, 4, 2, 5, 8, 2, 2, 2, 5}),
+		buildBoard(5, []int{8, 2, 2, 1, 9, 3, 1, 2, 5, 5, 3, 4, 5, 4, 4, 4, 5, 1, 1, 1, 7, 3, 2, 1, 7}),
+		buildBoard(5, []int{2, 5, 7, 3, 7, 8, 5, 3, 9, 1, 2, 6, 4, 7, 3, 8, 3, 7, 4, 6, 5, 5, 1, 2, 7}),
+		buildBoard(5, []int{5, 7, 2, 2, 6, 5, 3, 2, 7, 1, 1, 1, 1, 1, 9, 7, 6, 1, 2, 7, 6, 4, 4, 2, 8}),
+		buildBoard(5, []int{1, 7, 1, 1, 2, 4, 4, 5, 1, 8, 6, 2, 2, 2, 4, 2, 5, 1, 2, 2, 9, 1, 4, 6, 8}),
+		buildBoard(5, []int{2, 6, 2, 1, 9, 2, 4, 2, 2, 2, 2, 1, 4, 3, 8, 3, 1, 3, 5, 1, 7, 2, 8, 8, 2}),
+		buildBoard(5, []int{5, 3, 5, 1, 7, 5, 1, 1, 1, 1, 3, 3, 1, 2, 7, 1, 3, 2, 5, 2, 3, 2, 2, 3, 1}),
+		buildBoard(5, []int{2, 8, 9, 1, 4, 7, 1, 1, 1, 1, 3, 7, 3, 7, 1, 1, 3, 1, 5, 4, 6, 4, 4, 2, 4}),
+		buildBoard(5, []int{6, 3, 7, 3, 5, 4, 4, 5, 5, 2, 3, 3, 2, 1, 2, 3, 7, 5, 2, 8, 4, 4, 2, 3, 7}),
+		buildBoard(5, []int{1, 4, 1, 4, 6, 2, 2, 4, 2, 4, 5, 5, 2, 4, 6, 8, 2, 2, 7, 1, 5, 5, 6, 1, 1}),
+		buildBoard(5, []int{3, 3, 1, 3, 1, 3, 8, 2, 3, 3, 1, 7, 2, 5, 5, 5, 2, 8, 2, 2, 5, 4, 6, 2, 4}),
+		buildBoard(5, []int{1, 1, 8, 6, 4, 2, 3, 2, 3, 1, 1, 7, 3, 7, 1, 8, 1, 7, 9, 2, 1, 2, 3, 1, 6}),
+		buildBoard(5, []int{4, 4, 4, 3, 3, 2, 4, 2, 1, 3, 4, 2, 2, 6, 1, 5, 9, 1, 1, 3, 5, 1, 2, 6, 2}),
+		buildBoard(5, []int{8, 2, 5, 4, 1, 6, 1, 4, 2, 2, 4, 3, 2, 7, 3, 7, 5, 4, 2, 8, 3, 1, 6, 8, 2}),
+		buildBoard(5, []int{4, 6, 3, 3, 4, 5, 5, 4, 1, 4, 3, 3, 1, 1, 9, 4, 7, 5, 5, 4, 3, 6, 3, 1, 6}),
+		buildBoard(5, []int{9, 8, 2, 4, 6, 1, 1, 9, 9, 1, 6, 1, 1, 2, 5, 8, 2, 4, 6, 1, 1, 6, 2, 1, 4}),
+		buildBoard(5, []int{6, 5, 2, 5, 1, 4, 5, 2, 1, 9, 8, 4, 1, 9, 1, 2, 1, 4, 9, 1, 5, 5, 1, 2, 7}),
+		buildBoard(5, []int{1, 1, 5, 2, 6, 1, 9, 5, 1, 3, 9, 4, 1, 1, 5, 1, 1, 4, 2, 4, 5, 4, 1, 2, 2}),
+		buildBoard(5, []int{1, 9, 8, 2, 2, 2, 4, 2, 2, 8, 1, 5, 2, 2, 2, 6, 2, 5, 3, 6, 4, 4, 2, 4, 2}),
+		buildBoard(5, []int{4, 3, 3, 9, 1, 5, 7, 4, 3, 3, 5, 3, 8, 1, 1, 3, 3, 2, 2, 5, 4, 6, 1, 9, 5}),
+		buildBoard(5, []int{1, 4, 5, 9, 4, 1, 3, 5, 1, 6, 1, 5, 5, 6, 4, 1, 2, 5, 2, 2, 8, 2, 6, 4, 8}),
+		buildBoard(5, []int{2, 9, 3, 2, 6, 8, 1, 2, 3, 4, 1, 1, 1, 7, 1, 3, 1, 7, 3, 1, 7, 9, 2, 8, 8}),
+		buildBoard(5, []int{2, 2, 4, 2, 2, 3, 2, 2, 3, 7, 3, 8, 2, 1, 2, 1, 3, 3, 5, 3, 3, 8, 2, 4, 3}),
+		buildBoard(5, []int{3, 1, 6, 3, 5, 6, 3, 1, 1, 1, 4, 1, 3, 2, 4, 8, 1, 5, 1, 3, 2, 3, 1, 9, 3}),
+		buildBoard(5, []int{3, 2, 5, 7, 3, 1, 8, 5, 7, 3, 3, 4, 4, 2, 6, 3, 8, 2, 9, 2, 4, 4, 2, 1, 2}),
+		buildBoard(5, []int{6, 4, 3, 1, 2, 4, 4, 4, 5, 5, 4, 1, 1, 1, 3, 6, 8, 2, 1, 5, 5, 5, 5, 2, 3}),
+		buildBoard(5, []int{2, 8, 5, 5, 6, 9, 4, 3, 3, 4, 1, 9, 1, 8, 2, 5, 2, 5, 5, 2, 5, 8, 7, 3, 8}),
+		buildBoard(5, []int{4, 2, 4, 1, 3, 1, 2, 5, 1, 5, 1, 6, 2, 7, 2, 3, 3, 3, 1, 1, 3, 1, 8, 2, 9}),
+		buildBoard(5, []int{2, 8, 1, 3, 1, 4, 1, 5, 5, 5, 1, 4, 2, 2, 6, 8, 4, 6, 5, 2, 2, 5, 5, 5, 8}),
 	}
-	
+
 	g := Game{
 		levels: levels,
-		level: 0,
-		hist: []Board{levels[0]},
+		level:  0,
+		hist:   []Board{levels[0]},
+		mouse:  &CombinedPosControl{},
 	}
 
 	if err := ebiten.RunGame(&g); err != nil {
