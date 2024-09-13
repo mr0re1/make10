@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 
+	"make10/pkg"
+
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/ebitenutil"
 	"github.com/hajimehoshi/ebiten/v2/examples/resources/fonts"
@@ -140,7 +142,7 @@ type Game struct {
 	levels []Board
 	hist   []Board
 
-	mouse PosControl
+	mouse pkg.PosControl
 	_log  []string
 }
 
@@ -155,116 +157,7 @@ func (g *Game) log(msg string) {
 	}
 }
 
-type Pos struct {
-	X, Y float32
-}
-
-func (p Pos) String() string {
-	return fmt.Sprintf("(%d, %d)", int(p.X), int(p.Y))
-}
-
-type PosControl interface {
-	IsDragging() (bool, Pos, Pos)
-	JustFinishedDragging() (bool, Pos, Pos)
-	Update() error
-}
-
-type MouseControl struct {
-	sp                   Pos
-	dragging             bool
-	justFinishedDragging bool
-}
-
-func (m *MouseControl) cursorPos() Pos {
-	x, y := ebiten.CursorPosition()
-	return Pos{float32(x), float32(y)}
-}
-
-func (m *MouseControl) Update() error {
-	m.justFinishedDragging = false
-
-	if inpututil.IsMouseButtonJustReleased(ebiten.MouseButtonLeft) {
-		m.dragging, m.justFinishedDragging = false, true
-	}
-
-	if inpututil.IsMouseButtonJustPressed(ebiten.MouseButtonLeft) {
-		m.dragging, m.sp = true, m.cursorPos()
-	}
-	return nil
-}
-
-func (m *MouseControl) IsDragging() (bool, Pos, Pos) {
-	return m.dragging, m.sp, m.cursorPos()
-}
-
-func (m *MouseControl) JustFinishedDragging() (bool, Pos, Pos) {
-	return m.justFinishedDragging, m.sp, m.cursorPos()
-}
-
-type TouchControl struct {
-	drugging             bool
-	id                   ebiten.TouchID
-	sp, fp               Pos
-	justFinishedDragging bool
-}
-
-func (t *TouchControl) IsDragging() (bool, Pos, Pos) {
-	return t.drugging, t.sp, t.fp
-}
-
-func (t *TouchControl) JustFinishedDragging() (bool, Pos, Pos) {
-	return t.justFinishedDragging, t.sp, t.fp
-}
-
-func (t *TouchControl) touchPos() Pos {
-	x, y := ebiten.TouchPosition(t.id)
-	return Pos{float32(x), float32(y)}
-}
-
-func (t *TouchControl) Update() error {
-	t.justFinishedDragging = false
-	if !t.drugging {
-		touches := inpututil.AppendJustPressedTouchIDs(nil)
-		if len(touches) == 0 {
-			return nil
-		}
-		t.drugging, t.id, t.sp, t.fp = true, touches[0], t.touchPos(), t.touchPos()
-	}
-
-	if inpututil.IsTouchJustReleased(t.id) {
-		t.drugging, t.justFinishedDragging = false, true
-	} else {
-		t.fp = t.touchPos()
-	}
-	return nil
-}
-
-type CombinedPosControl struct {
-	m MouseControl
-	t TouchControl
-}
-
-func (c *CombinedPosControl) IsDragging() (bool, Pos, Pos) {
-	if ok, s, f := c.m.IsDragging(); ok {
-		return true, s, f
-	}
-	return c.t.IsDragging()
-}
-
-func (c *CombinedPosControl) JustFinishedDragging() (bool, Pos, Pos) {
-	if ok, s, f := c.m.JustFinishedDragging(); ok {
-		return true, s, f
-	}
-	return c.t.JustFinishedDragging()
-}
-
-func (c *CombinedPosControl) Update() error {
-	c.m.Update()
-	c.t.Update()
-	return nil
-}
-
-func (g *Game) doSel(s Pos, f Pos) {
+func (g *Game) doSel(s pkg.Pos, f pkg.Pos) {
 	g.log(fmt.Sprintf("doSel %v %v", s, f))
 	lx, rx, ly, ry := min(s.X, f.X), max(s.X, f.X), min(s.Y, f.Y), max(s.Y, f.Y)
 
@@ -385,7 +278,7 @@ func main() {
 		levels: levels,
 		level:  0,
 		hist:   []Board{levels[0]},
-		mouse:  &CombinedPosControl{},
+		mouse:  &pkg.CombinedPosControl{},
 	}
 
 	if err := ebiten.RunGame(&g); err != nil {
